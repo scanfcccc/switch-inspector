@@ -220,6 +220,7 @@ class TextFSMWrapper(BaseParser):
                 if k.lower() == 'port' and '/' in str(row[k]):
                     row['normalized_iface'] = normalize_iface(str(row[k]))
                     break
+            row['category'] = self._default_category
             row['_origin'] = 'textfsm'
 
         return ParseResult(rows=rows)

@@ -26,6 +26,13 @@ def get_fields_by_category(catalog: Catalog, category: str) -> List[FieldDef]:
 def parse_all_logs(logs: List[LogFile], registry: ParserRegistry) -> Dict[str, List[Dict]]:
     categories: Dict[str, List[Dict]] = defaultdict(list)
 
+    def _cat_for(cmd_name: str) -> str:
+        p = registry._textfsm_parsers.get(cmd_name) or registry._custom_parsers.get(cmd_name)
+        if p and p.fields:
+            cats = {f.category for f in p.fields if f.category}
+            return next(iter(cats)) if cats else 'unknown'
+        return 'unknown'
+
     for lf in logs:
         device_ip = lf.device.ip or lf.filename_meta.ip
         device_name = lf.device.name or lf.filename_meta.name
@@ -33,12 +40,13 @@ def parse_all_logs(logs: List[LogFile], registry: ParserRegistry) -> Dict[str, L
         for cmd_name, cmd_block in lf.commands.items():
             result = registry.parse(cmd_name, cmd_block.raw)
             if result and result.rows:
+                cmd_cat = _cat_for(cmd_name)
                 for row in result.rows:
                     row['_device_ip'] = device_ip
                     row['_device_name'] = device_name
                     row['_device_serial'] = lf.device.serial or lf.filename_meta.serial
                     row['_source_file'] = lf.source_path
-                    cat = row.get('category', 'unknown')
+                    cat = row.pop('category', None) or cmd_cat
                     categories[cat].append(row)
 
     return dict(categories)

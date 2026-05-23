@@ -1,7 +1,7 @@
 import csv
 import io
 from typing import List, Dict, Optional
-from engine.field_catalog import FieldDef
+from engine.parser_base import FieldDef
 
 
 def export_csv(

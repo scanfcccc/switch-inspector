@@ -79,10 +79,12 @@ async def index():
 async def api_scan(body: dict):
     path = body.get("path", "")
     if not path or not os.path.isdir(path):
+        set_state({}, [], "")
         return {"error": f"目录不存在: {path}"}
 
     log_files = sorted(Path(path).rglob("*.log"))
     if not log_files:
+        set_state({}, [], "")
         return {"error": f"在 {path} 中未找到 .log 文件"}
 
     logs = []
@@ -144,6 +146,8 @@ CAT_PRIORITY = ['interface', 'neighbor', 'device', 'system', 'log']
 
 def _build_rows(field_keys: List[str]) -> tuple:
     parsed_data, _, _ = get_state()
+    if not field_keys or not parsed_data:
+        return [], {}, "interface"
     field_defs = {f.key: f for f in catalog.fields}
     cat_keys = {}
     for key in field_keys:

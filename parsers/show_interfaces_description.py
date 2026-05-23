@@ -1,13 +1,10 @@
-from engine.parser_base import TableParser, FieldDef, ParseResult
+from engine.parser_base import FixedWidthTableParser, FieldDef, ParseResult
 from engine.normalizer import normalize_iface
-from typing import Any, Dict
 
 
-class ShowInterfacesDescription(TableParser):
+class ShowInterfacesDescription(FixedWidthTableParser):
     command = "show interfaces description"
-    skip_header = 2
     columns = ["interface", "status", "admin_status", "description"]
-    sep = r'\s{2,}'
 
     fields = [
         FieldDef(key="interface", label="接口名", category="interface",
@@ -21,14 +18,14 @@ class ShowInterfacesDescription(TableParser):
     ]
 
     def parse(self, raw: str) -> ParseResult:
-        result = super().parse(raw)
+        result = self._parse_table(raw, self.columns)
         for row in result.rows:
             row['normalized_iface'] = normalize_iface(row.get('interface', ''))
             row['category'] = 'interface'
         return result
 
 
-class ShowInterfacesStatus(TableParser):
+class ShowInterfacesStatus(FixedWidthTableParser):
     command = "show interfaces status"
     columns = ["interface", "status", "vlan", "duplex", "speed", "type"]
     fields = [
@@ -41,7 +38,7 @@ class ShowInterfacesStatus(TableParser):
     ]
 
     def parse(self, raw: str) -> ParseResult:
-        result = super().parse(raw)
+        result = self._parse_table(raw, self.columns)
         for row in result.rows:
             row['normalized_iface'] = normalize_iface(row.get('interface', ''))
             row['category'] = 'interface'

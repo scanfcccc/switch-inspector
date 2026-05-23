@@ -349,11 +349,12 @@ async def api_preview(body: dict):
         if fd:
             cat_keys.setdefault(fd.category, []).append(key)
 
+    device_rows = parsed_data.get('device', [])
     all_rows = []
     for cat, keys in cat_keys.items():
         cat_rows = parsed_data.get(cat, [])
         if cat == 'interface':
-            cat_rows = merge_interface_rows(cat_rows)
+            cat_rows = merge_interface_rows(cat_rows, device_rows)
         elif cat == 'neighbor':
             cat_rows = merge_neighbor_rows(cat_rows)
         cat_rows = project_rows(cat_rows, keys)
@@ -401,11 +402,12 @@ async def api_export(fields: str, format: str = "csv"):
         if fd:
             cat_keys.setdefault(fd.category, []).append(key)
 
+    device_rows = parsed_data.get('device', [])
     all_rows = []
     for cat, keys in cat_keys.items():
         cat_rows = parsed_data.get(cat, [])
         if cat == 'interface':
-            cat_rows = merge_interface_rows(cat_rows)
+            cat_rows = merge_interface_rows(cat_rows, device_rows)
         elif cat == 'neighbor':
             cat_rows = merge_neighbor_rows(cat_rows)
         cat_rows = project_rows(cat_rows, keys)

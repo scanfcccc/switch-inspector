@@ -1,10 +1,9 @@
-from engine.parser_base import TableParser, FieldDef, ParseResult
+from engine.parser_base import FixedWidthTableParser, FieldDef, ParseResult
 
 
-class ShowFanSpeed(TableParser):
+class ShowFanSpeed(FixedWidthTableParser):
     command = "show fan speed"
     columns = ["fan_id", "fan_type", "status", "speed", "speed_level"]
-    skip_header = 2
 
     fields = [
         FieldDef(key="fan_id", label="风扇ID", category="system"),
@@ -15,7 +14,7 @@ class ShowFanSpeed(TableParser):
     ]
 
     def parse(self, raw: str) -> ParseResult:
-        result = super().parse(raw)
+        result = self._parse_table(raw, self.columns)
         for row in result.rows:
             row['category'] = 'system'
         return result

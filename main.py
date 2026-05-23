@@ -20,6 +20,7 @@ from engine.field_catalog import (
     merge_neighbor_rows, project_rows, Catalog,
 )
 from engine.exporter import export_csv, export_xlsx
+from engine.report import build_report
 
 
 # --- Scan state (thread-safe, single-user local tool) ---
@@ -216,6 +217,36 @@ async def api_export(fields: str, format: str = "csv"):
         data = export_csv(merged, catalog.fields, field_keys)
         return Response(content=data, media_type="text/csv; charset=utf-8-sig",
                         headers={"Content-Disposition": "attachment; filename=switch_report.csv"})
+
+
+@app.post("/api/report")
+async def api_report():
+    parsed_data, _, _ = get_state()
+    if not parsed_data:
+        return {"error": "请先扫描目录"}
+    device_rows = parsed_data.get('device', [])
+    iface_rows = merge_interface_rows(parsed_data.get('interface', []), device_rows)
+    report = build_report(iface_rows, device_rows, parsed_data)
+    return {
+        "total_devices": report.total_devices,
+        "total_interfaces": report.total_interfaces,
+        "up_interfaces": report.up_interfaces,
+        "down_interfaces": report.down_interfaces,
+        "optical_healthy": report.optical_healthy,
+        "optical_warning": report.optical_warning,
+        "optical_critical": report.optical_critical,
+        "alerts": [{"severity": a.severity, "category": a.category,
+                     "device": f"{a.device_name}({a.device_ip})",
+                     "message": a.message}
+                    for a in report.alerts],
+        "devices": [{"ip": d.ip, "name": d.name, "model": d.model,
+                      "interfaces": d.interface_count,
+                      "up": d.up_count, "down": d.down_count,
+                      "optical_alerts": d.optical_alert_count,
+                      "error_alerts": d.error_alert_count,
+                      "compliance_issues": d.compliance_issues}
+                     for d in report.devices],
+    }
 
 
 if __name__ == "__main__":

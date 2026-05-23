@@ -72,7 +72,7 @@ def auto_stop():
     try:
         _OBSERVER.stop()
         _OBSERVER.join(timeout=3)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to stop hot-reload watcher: %s", e)
     _OBSERVER = None
     logger.info("Hot-reload watcher stopped")

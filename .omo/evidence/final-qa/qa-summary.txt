@@ -1,0 +1,46 @@
+## F3: Real Manual QA - Final Summary
+
+### Scenario 1 (Imports): PASS
+- All engine modules import correctly (plugin_base, plugin_manager, plugin_config, plugin_exceptions, alert_rule_base, alert_engine, registry)
+- Note: plugin_watchdog and get_parser_registry do not exist in codebase (not actual imports used by the app)
+
+### Scenario 2 (Discovery): PASS
+- AlertPluginManager.discover_rules() found 4 alert rules:
+  - interface_errors: 接口错误计数异常检测
+  - optics_power: 光模块功率异常检测
+  - storm_control: 风暴控制合规检查
+  - system_health: 设备系统健康状态检测
+
+### Scenario 3 (Alert engine): PASS
+- 4 rules loaded, 4 alerts triggered with minimal fixture data
+- All alerts correctly INFO severity (expected - fixture data has no anomalies)
+- No errors during evaluation
+
+### Scenario 4 (Full pipeline): PASS
+- Scan: 277 files, 74 fields, 5 groups (device, interface, neighbor, system, log)
+- Preview: 8578 total rows, pagination works correctly
+- Report: 277 devices, 8578 interfaces (2683 up, 5880 down)
+- Alerts: 3108 total (1007 info, 11 warning, 2090 critical)
+- Alert categories: system(1006), error(13), compliance(2087), optical(2)
+
+### Scenario 5 (Edge cases): PASS
+- Invalid path: Returns "目录不存在: /nonexistent" (correct 400-style error)
+- Empty fields preview: Returns total=0 (correct)
+
+### Integration
+- Full pipeline end-to-end: scan -> preview -> report -> alerts
+- All APIs respond correctly with proper JSON structure
+- Alert engine integrates with report builder
+
+### Edge Cases tested
+- Invalid scan path (nonexistent directory)
+- Empty fields list in preview
+- Missing scan data before report (returns "请先扫描目录")
+
+### Evidence
+- .omo/evidence/final-qa/test-results.txt
+- .omo/evidence/final-qa/scan-result.json
+- .omo/evidence/final-qa/report-result.json
+- .omo/evidence/final-qa/qa-summary.txt
+
+### VERDICT: APPROVE

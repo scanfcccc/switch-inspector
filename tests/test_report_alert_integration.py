@@ -33,12 +33,11 @@ class TestBuildReportPluginAlerts:
         rule_names = {a.rule_name for a in report.alerts}
         assert "optics_power" in rule_names
 
-    def test_plugin_and_legacy_alerts_coexist(self):
+    def test_plugin_alerts_generated(self):
+        """插件告警系统完全替代了旧硬编码告警"""
         ifaces = [_make_iface(rx_power=-25.0)]
         report = build_report(ifaces)
-        legacy = [a for a in report.alerts if not a.rule_name]
         plugin = [a for a in report.alerts if a.rule_name]
-        assert any("光功率" in a.message for a in legacy)
         assert any(a.rule_name == "optics_power" for a in plugin)
 
     def test_no_false_alerts_healthy(self):

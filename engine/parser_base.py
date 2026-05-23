@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Callable, ClassVar
+from typing import List, Dict, Optional, Any, ClassVar
 
 
 @dataclass

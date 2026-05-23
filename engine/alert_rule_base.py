@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List, Dict, ClassVar, Optional
 from abc import abstractmethod
 
-from engine.plugin_base import PluginBase, PluginManifest
+from engine.plugin_base import PluginBase
 
 
 class AlertSeverity(Enum):

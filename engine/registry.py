@@ -1,8 +1,11 @@
 import importlib
 import inspect
-import pkgutil
+import logging
 import os
-from typing import Dict, List, Optional, Tuple, Any
+import pkgutil
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger("switch-inspector.registry")
 
 import yaml
 
@@ -166,7 +169,7 @@ class ParserRegistry:
             from ntc_templates import parse_output
             self._textfsm_enabled = True
         except ImportError:
-            print("ntc-templates not installed, TextFSM engine disabled")
+            logger.warning("ntc-templates not installed, TextFSM engine disabled")
             return
 
         try:
@@ -190,7 +193,7 @@ class ParserRegistry:
 
         overlap = set(self._textfsm_parsers.keys()) & set(self._custom_parsers.keys())
         if overlap:
-            print(f"Custom parsers override TextFSM for: {overlap}")
+            logger.info("Custom parsers override TextFSM for: %s", overlap)
 
 
 class TextFSMWrapper(BaseParser):

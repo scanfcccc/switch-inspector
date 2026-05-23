@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 from engine.alert_rule_base import AlertSeverity
@@ -64,9 +64,6 @@ class DeviceSummary:
     up_count: int
     down_count: int
     optical_count: int
-    optical_alert_count: int
-    error_alert_count: int
-    compliance_issues: int
 
 
 @dataclass
@@ -110,35 +107,6 @@ def build_report(ifaces: List[Dict],
         optical = sum(1 for r in iface_list if r.get('transceiver_present') == '是'
                       or r.get('ddm_present') == '是')
 
-        # Check optical power
-        optical_alerts = 0
-        for r in iface_list:
-            rx = r.get('ddm_rx_power', '') or r.get('RX 光功率(dBm)', '')
-            try:
-                if rx and float(rx) < -15:
-                    optical_alerts += 1
-            except ValueError:
-                pass
-
-        # Check error counters
-        error_alerts = 0
-        for r in iface_list:
-            for ef in ['undersize', 'oversize', 'collisions', 'fcs_err',
-                       'crc_align_err', 'jabbers']:
-                try:
-                    if r.get(ef) and int(r[ef]) > 100:
-                        error_alerts += 1
-                        break
-                except (ValueError, TypeError):
-                    pass
-
-        # Compliance issues
-        compliance = 0
-        for r in iface_list:
-            if r.get('storm_control') not in ('yes', '是'):
-                if r.get('interface_mode') == 'access':
-                    compliance += 1
-
         ds = DeviceSummary(
             ip=ip,
             name=dev_info.get('_device_name', ''),
@@ -148,9 +116,6 @@ def build_report(ifaces: List[Dict],
             interface_count=len(iface_list),
             up_count=up, down_count=down,
             optical_count=optical,
-            optical_alert_count=optical_alerts,
-            error_alert_count=error_alerts,
-            compliance_issues=compliance,
         )
         report.devices.append(ds)
 
@@ -160,34 +125,7 @@ def build_report(ifaces: List[Dict],
 
     report.total_devices = len(report.devices)
 
-    # Generate hardcoded alerts (legacy)
-    for ds in report.devices:
-        if ds.optical_alert_count > 0:
-            report.alerts.append(AlertItem(
-                device_ip=ds.ip, device_name=ds.name,
-                category='optical', severity='warning',
-                message=f"{ds.optical_alert_count} 个接口光功率异常",
-            ))
-        if ds.error_alert_count > 0:
-            report.alerts.append(AlertItem(
-                device_ip=ds.ip, device_name=ds.name,
-                category='error', severity='warning',
-                message=f"{ds.error_alert_count} 个接口错误计数超标",
-            ))
-        if ds.compliance_issues > 0:
-            report.alerts.append(AlertItem(
-                device_ip=ds.ip, device_name=ds.name,
-                category='compliance', severity='info',
-                message=f"{ds.compliance_issues} 个接口缺少风暴控制",
-            ))
-        if ds.interface_count > 10 and ds.down_count > ds.interface_count * 0.85:
-            report.alerts.append(AlertItem(
-                device_ip=ds.ip, device_name=ds.name,
-                category='system', severity='info',
-                message=f"{ds.down_count}/{ds.interface_count} 接口down ({(ds.down_count*100)//ds.interface_count}%)",
-            ))
-
-    # Plugin-based alerts
+    # Plugin-based alerts via AlertPluginManager
     try:
         engine = _get_alert_engine()
         for ip, iface_list in dev_ifaces.items():

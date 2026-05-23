@@ -264,9 +264,7 @@ async def api_report():
         "devices": [{"ip": d.ip, "name": d.name, "model": d.model,
                       "interfaces": d.interface_count,
                       "up": d.up_count, "down": d.down_count,
-                      "optical_alerts": d.optical_alert_count,
-                      "error_alerts": d.error_alert_count,
-                      "compliance_issues": d.compliance_issues}
+                      }
                      for d in report.devices],
     }
 

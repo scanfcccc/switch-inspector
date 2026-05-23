@@ -1,6 +1,9 @@
+import logging
 from typing import Dict, List, Optional, Any
 from engine.plugin_base import PluginBase, PluginManifest
-from engine.plugin_exceptions import PluginValidationError, PluginRuntimeError
+from engine.plugin_exceptions import PluginValidationError
+
+logger = logging.getLogger("switch-inspector.plugin_manager")
 
 
 class PluginManager:
@@ -59,7 +62,8 @@ class PluginManager:
             try:
                 fn = getattr(plugin, method)
                 results.append(fn(*args, **kwargs))
-            except Exception:
+            except Exception as e:
+                logger.warning("Plugin %s.%s() failed: %s", plugin.manifest.name, method, e)
                 results.append(None)
         return results
 
@@ -111,8 +115,8 @@ class PluginManager:
             for plugin in plugins.values():
                 try:
                     plugin.on_unload()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Plugin %s.on_unload() failed: %s", plugin.manifest.name, e)
         self._registry.clear()
 
 

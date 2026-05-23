@@ -1,0 +1,143 @@
+# TextFSM 命令→模板映射表
+# 格式: 命令名 → {template, category, join_group, join_key}
+templates:
+  show version:
+    template: ruijie_os_show_version
+    category: device
+    join_group: device
+    join_key: device_ip
+  show clock:
+    template: ruijie_os_show_clock
+    category: device
+    join_group: device
+    join_key: device_ip
+  show version slots:
+    template: ruijie_os_show_version_slots
+    category: device
+    join_group: device
+    join_key: device_ip
+  show manuinfo:
+    template: ruijie_os_show_manuinfo
+    category: device
+    join_group: device
+    join_key: device_ip
+  show interfaces description:
+    template: ruijie_os_show_interfaces_description
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show interfaces transceiver:
+    template: ruijie_os_show_interfaces_transceiver
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show interfaces status:
+    template: ruijie_os_show_interfaces_status
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show vlan:
+    template: ruijie_os_show_vlan
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show logging:
+    template: ruijie_os_show_logging
+    category: log
+    join_group: null
+    join_key: null
+  show lldp neighbors detail:
+    template: ruijie_os_show_lldp_neighbors_detail
+    category: neighbor
+    join_group: neighbor
+    join_key: local_iface
+  show fan speed:
+    template: ruijie_os_show_fan
+    category: system
+    join_group: device
+    join_key: device_ip
+  show aggregatePort summary:
+    template: ruijie_os_show_aggregatePort_summary
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show interfaces counters rate:
+    template: ruijie_os_show_interfaces_counters_rate
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show vrrp:
+    template: ruijie_os_show_vrrp
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show arp:
+    template: ruijie_os_show_arp
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show mac-address-table:
+    template: ruijie_os_show_mac-address-table
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show ip interface brief:
+    template: ruijie_os_show_ip_interface_brief
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show ip route:
+    template: ruijie_os_show_ip_route
+    category: device
+    join_group: device
+    join_key: device_ip
+  show interfaces switchport:
+    template: ruijie_os_show_interfaces_switchport
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+  show interfaces:
+    template: ruijie_os_show_interfaces
+    category: interface
+    join_group: interface
+    join_key: normalized_iface
+
+# 字段中文标签 (TextFSM 原始 key → 中文标签)
+# 自定义解析器的标签在各自 fields 中定义
+field_labels:
+  interface: 接口名
+  port: 端口
+  vlan: VLAN
+  vlan_id: VLAN ID
+  status: 状态
+  admin_status: 管理状态
+  duplex: 双工模式
+  speed: 速率
+  description: 描述
+  type: 类型
+  mac_address: MAC地址
+  ip_address: IP地址
+  prefix: 前缀
+  protocol: 协议
+  neighbor: 邻居设备
+  neighbor_interface: 邻居端口
+  chassis_id: ChassisID
+  system_name: 系统名称
+  software_version: 软件版本
+  hardware_version: 硬件版本
+  serial_number: 序列号
+  model: 型号
+  uptime: 运行时间
+  clock: 系统时间
+  fan: 风扇
+  power: 电源
+  temperature: 温度
+  log: 日志内容
+  facility: 日志设施
+  severity: 日志级别
+  timestamp: 时间戳
+  message: 消息
+  count: 计数
+  rate: 速率
+  errdisabled: 错误禁用
+  reason: 原因

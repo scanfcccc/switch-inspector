@@ -27,9 +27,9 @@ def parse_all_logs(logs: List[LogFile], registry: ParserRegistry) -> Dict[str, L
     categories: Dict[str, List[Dict]] = defaultdict(list)
 
     def _cat_for(cmd_name: str) -> str:
-        p = registry._textfsm_parsers.get(cmd_name) or registry._custom_parsers.get(cmd_name)
-        if p and p.fields:
-            cats = {f.category for f in p.fields if f.category}
+        fields = registry.get_fields_for_command(cmd_name)
+        if fields:
+            cats = {f.category for f in fields if f.category}
             return next(iter(cats)) if cats else 'unknown'
         return 'unknown'
 

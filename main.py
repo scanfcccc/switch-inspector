@@ -111,13 +111,18 @@ async def api_scan(body: dict):
     for lf in logs:
         all_cmds.update(lf.commands.keys())
 
+    plugin_errors = registry.get_load_errors()
+    all_warnings = errors[:10]
+    if plugin_errors:
+        all_warnings.extend([f"[解析器] {e}" for e in plugin_errors[:5]])
+
     return {
         "file_count": len(log_files),
         "device_count": len(logs),
         "command_count": len(all_cmds),
         "field_count": len(catalog.fields),
         "field_groups": field_groups,
-        "warnings": errors[:10],
+        "warnings": all_warnings,
     }
 
 

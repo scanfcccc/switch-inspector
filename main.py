@@ -30,8 +30,9 @@ parsed_data: dict = {}  # category -> rows
 
 def initialize():
     global registry, catalog
-    registry.load_parsers()
-    registry.load_textfsm_parsers()
+    if catalog is not None:
+        return
+    registry.initialize()
     catalog = build_catalog(registry)
 
 

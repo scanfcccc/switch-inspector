@@ -342,7 +342,6 @@ async def api_preview(body: dict):
     page = body.get("page", 1)
     page_size = body.get("page_size", 100)
 
-    # determine which categories to include
     field_defs = {f.key: f for f in catalog.fields}
     cat_keys: dict = {}
     for key in fields:
@@ -351,33 +350,54 @@ async def api_preview(body: dict):
             cat_keys.setdefault(fd.category, []).append(key)
 
     device_rows = parsed_data.get('device', [])
-    all_rows = []
-    for cat, keys in cat_keys.items():
-        cat_rows = parsed_data.get(cat, [])
-        if cat == 'interface':
-            cat_rows = merge_interface_rows(cat_rows, device_rows)
-        elif cat == 'neighbor':
-            cat_rows = merge_neighbor_rows(cat_rows)
-        cat_rows = project_rows(cat_rows, keys)
-        all_rows.extend(cat_rows)
 
-    total = len(all_rows)
+    CAT_PRIORITY = ['interface', 'neighbor', 'device', 'system', 'log']
+    primary_cat = next((c for c in CAT_PRIORITY if c in cat_keys), 'interface')
+
+    all_rows = []
+    all_cat_rows = parsed_data.get(primary_cat, [])
+    if primary_cat == 'interface':
+        all_cat_rows = merge_interface_rows(all_cat_rows, device_rows)
+    elif primary_cat == 'neighbor':
+        all_cat_rows = merge_neighbor_rows(all_cat_rows)
+
+    primary_keys = cat_keys.get(primary_cat, [])
+    merged = project_rows(all_cat_rows, primary_keys)
+
+    for row in merged:
+        row['_row_type'] = primary_cat
+
+    for cat in cat_keys:
+        if cat == primary_cat or cat == 'device':
+            continue
+        extra_keys = cat_keys[cat]
+        extra_rows = parsed_data.get(cat, [])
+        if cat == 'interface':
+            extra_rows = merge_interface_rows(extra_rows, device_rows)
+        elif cat == 'neighbor':
+            extra_rows = merge_neighbor_rows(extra_rows, device_rows)
+        extra_rows = project_rows(extra_rows, extra_keys)
+        for row in extra_rows:
+            row['_row_type'] = cat
+        merged.extend(extra_rows)
+
+    total = len(merged)
     label_map = {f.key: f.label for f in catalog.fields}
 
-    # add source info prefix
     columns = []
     for k in fields:
         if k in label_map:
-            if label_map[k] not in columns:
-                columns.append(label_map[k])
+            label = label_map[k]
+            if label not in columns:
+                columns.append(label)
 
     start = (page - 1) * page_size
     end = start + page_size
-    page_rows = all_rows[start:end]
+    page_rows = merged[start:end]
 
     result_rows = []
     for i, row in enumerate(page_rows):
-        r = {'_rowid': start + i}
+        r = {'_rowid': start + i, '_row_type': row.get('_row_type', '')}
         for k in fields:
             fd = field_defs.get(k)
             label = fd.label if fd else k
@@ -390,6 +410,7 @@ async def api_preview(body: dict):
         "page_size": page_size,
         "columns": columns,
         "rows": result_rows,
+        "row_type": primary_cat,
     }
 
 
@@ -404,15 +425,32 @@ async def api_export(fields: str, format: str = "csv"):
             cat_keys.setdefault(fd.category, []).append(key)
 
     device_rows = parsed_data.get('device', [])
+    CAT_PRIORITY = ['interface', 'neighbor', 'device', 'system', 'log']
+    primary_cat = next((c for c in CAT_PRIORITY if c in cat_keys), 'interface')
+
     all_rows = []
-    for cat, keys in cat_keys.items():
-        cat_rows = parsed_data.get(cat, [])
+    all_cat_rows = parsed_data.get(primary_cat, [])
+    if primary_cat == 'interface':
+        all_cat_rows = merge_interface_rows(all_cat_rows, device_rows)
+    elif primary_cat == 'neighbor':
+        all_cat_rows = merge_neighbor_rows(all_cat_rows)
+
+    primary_keys = cat_keys.get(primary_cat, [])
+    merged = project_rows(all_cat_rows, primary_keys)
+
+    for cat in cat_keys:
+        if cat == primary_cat or cat == 'device':
+            continue
+        extra_keys = cat_keys[cat]
+        extra_rows = parsed_data.get(cat, [])
         if cat == 'interface':
-            cat_rows = merge_interface_rows(cat_rows, device_rows)
+            extra_rows = merge_interface_rows(extra_rows, device_rows)
         elif cat == 'neighbor':
-            cat_rows = merge_neighbor_rows(cat_rows)
-        cat_rows = project_rows(cat_rows, keys)
-        all_rows.extend(cat_rows)
+            extra_rows = merge_neighbor_rows(extra_rows, device_rows)
+        extra_rows = project_rows(extra_rows, extra_keys)
+        merged.extend(extra_rows)
+
+    all_rows = merged
 
     if format == "xlsx":
         data = export_xlsx(all_rows, catalog.fields, field_keys)

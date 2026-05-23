@@ -21,5 +21,21 @@ class ShowInterfacesTransceiverManuinfo(BlockParser):
                  join_group="interface", join_key="normalized_iface"),
     ]
 
+    KEY_MAP = {
+        'Vendor Name': 'vendor_name',
+        'Vendor Part Number': 'vendor_pn',
+        'Vendor Revision': 'vendor_rev',
+        'Manufacturing Date': 'mfg_date',
+        'Vendor OUI': 'vendor_oui',
+        'Encoding': 'encoding',
+    }
+
     def parse(self, raw: str) -> ParseResult:
-        return super().parse(raw)
+        result = super().parse(raw)
+        for row in result.rows:
+            for old_key, new_key in self.KEY_MAP.items():
+                if old_key in row:
+                    row[new_key] = row.pop(old_key)
+            row['normalized_iface'] = normalize_iface(row.get('interface', ''))
+            row['category'] = 'interface'
+        return result

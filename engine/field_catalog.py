@@ -74,8 +74,15 @@ def merge_interface_rows(rows: List[Dict], device_rows: List[Dict] = None) -> Li
     return result
 
 
-def merge_neighbor_rows(rows: List[Dict]) -> List[Dict]:
+def merge_neighbor_rows(rows: List[Dict], device_rows: List[Dict] = None) -> List[Dict]:
     merged: Dict[str, Dict] = {}
+    device_map = {}
+    if device_rows:
+        for dr in device_rows:
+            ip = dr.get('_device_ip', '')
+            if ip:
+                device_map[ip] = dr
+
     for row in rows:
         key = row.get('local_iface', row.get('interface', ''))
         neighbor = row.get('neighbor_name', '')
@@ -86,7 +93,16 @@ def merge_neighbor_rows(rows: List[Dict]) -> List[Dict]:
             merged[device_key].update(row)
         else:
             merged[device_key] = dict(row)
-    return list(merged.values())
+
+    result = list(merged.values())
+    if device_map:
+        for r in result:
+            dip = r.get('_device_ip', '')
+            if dip in device_map:
+                for k, v in device_map[dip].items():
+                    if k not in r or not r[k]:
+                        r[k] = v
+    return result
 
 
 def project_rows(rows: List[Dict], selected_keys: List[str]) -> List[Dict]:

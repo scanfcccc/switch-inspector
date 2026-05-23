@@ -12,18 +12,24 @@ def export_csv(
     output = io.StringIO()
     field_defs = {f.key: f for f in fields}
 
-    # determine columns
     cols = [k for k in selected_keys if k in field_defs] if selected_keys else [k for k in rows[0].keys() if k in field_defs]
-    # also include device meta
     meta_cols = ['_device_ip', '_device_name', '_device_serial']
     for mc in meta_cols:
         if mc not in cols and any(mc in r for r in rows):
             cols.insert(0, mc)
 
+    # add row type as first column for clarity when mixing categories
+    has_row_type = any('_row_type' in r for r in rows)
+    if has_row_type and '_row_type' not in cols:
+        cols.insert(0, '_row_type')
+
     labels = []
     for c in cols:
-        fd = field_defs.get(c)
-        labels.append(fd.label if fd else c)
+        if c == '_row_type':
+            labels.append('数据类型')
+        else:
+            fd = field_defs.get(c)
+            labels.append(fd.label if fd else c)
 
     writer = csv.writer(output)
     writer.writerow(labels)

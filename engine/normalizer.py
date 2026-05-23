@@ -4,6 +4,7 @@ SHORT_MAP = {
     'Gi': 'GigabitEthernet',
     'Te': 'TenGigabitEthernet',
     'Twe': 'TwentyFiveGigabitEthernet',
+    'TF': 'TFGigabitEthernet',
     'Fo': 'FortyGigabitEthernet',
     'Hu': 'HundredGigabitEthernet',
     'Vl': 'VLAN',
@@ -17,6 +18,7 @@ FULL_PREFIXES = [
     'GigabitEthernet', 'TenGigabitEthernet',
     'TwentyFiveGigabitEthernet', 'FortyGigabitEthernet',
     'HundredGigabitEthernet', 'Ethernet',
+    'TFGigabitEthernet',
     'VLAN', 'Loopback', 'AggregatePort',
     'FastEthernet',
 ]
@@ -48,12 +50,16 @@ def normalize_iface(name: str) -> str:
 
 def normalize_port_id(name: str) -> str:
     name = name.strip()
+    # If it looks like a MAC address, return as-is
+    if re.match(r'^([0-9a-fA-F]{2}\.){2}[0-9a-fA-F]{2}\.[0-9a-fA-F]{2}\.[0-9a-fA-F]{4}$', name):
+        return name
     m = re.match(r'([A-Za-z]+)(\d+/\d+(?:/\d+)?)', name)
     if m:
         short = m.group(1)
         rest = m.group(2)
         s2 = {'Te': 'TenGigabitEthernet', 'Gi': 'GigabitEthernet',
-              'Po': 'AggregatePort', 'Eth': 'Ethernet',
-              'Fo': 'FortyGigabitEthernet', 'Hu': 'HundredGigabitEthernet'}.get(short, short)
+              'Twe': 'TwentyFiveGigabitEthernet', 'TF': 'TFGigabitEthernet',
+              'Fo': 'FortyGigabitEthernet', 'Hu': 'HundredGigabitEthernet',
+              'Po': 'AggregatePort', 'Eth': 'Ethernet'}.get(short, short)
         return f"{s2} {rest}"
     return name

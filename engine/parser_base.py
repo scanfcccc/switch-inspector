@@ -134,7 +134,7 @@ class KVPParser(BaseParser):
                 continue
             if re.match(r'^[-=\s]+$', line):
                 continue
-            if re.match(r'^[A-Za-z][A-Za-z\s]+\s{2,}', line):
+            if re.match(r'^[A-Za-z][A-Za-z\s]+\s{2,}$', line):
                 continue
             parts = re.split(self.separator, line, maxsplit=1)
             if len(parts) == 2:

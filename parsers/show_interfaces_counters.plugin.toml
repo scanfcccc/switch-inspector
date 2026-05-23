@@ -1,0 +1,7 @@
+[plugin]
+name = "show_interfaces_counters_errors"
+version = "1.0.0"
+author = "netops"
+description = "解析 show interfaces counters errors / show interfaces counters rate up 输出，提取接口错误计数和速率"
+type = "parser"
+entry_point = "parsers.show_interfaces_counters:ShowInterfacesCountersErrors"

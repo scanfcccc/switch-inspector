@@ -1,0 +1,7 @@
+[plugin]
+name = "show_interfaces_usage"
+version = "1.0.0"
+author = "netops"
+description = "解析 show interfaces usage 输出，提取接口带宽/利用率"
+type = "parser"
+entry_point = "parsers.show_interfaces_usage:ShowInterfacesUsage"

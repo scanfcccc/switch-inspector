@@ -1,0 +1,7 @@
+[plugin]
+name = "show_interfaces_transceiver_manuinfo"
+version = "1.0.0"
+author = "netops"
+description = "解析 show interfaces transceiver manuinfo 输出，提取光模块厂商/型号/版本"
+type = "parser"
+entry_point = "parsers.show_interfaces_transceiver:ShowInterfacesTransceiverManuinfo"

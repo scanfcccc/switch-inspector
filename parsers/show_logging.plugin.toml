@@ -1,0 +1,7 @@
+[plugin]
+name = "show_logging"
+version = "1.0.0"
+author = "netops"
+description = "解析 show logging 输出，提取系统日志时间/级别/内容"
+type = "parser"
+entry_point = "parsers.show_logging:ShowLogging"

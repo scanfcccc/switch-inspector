@@ -1,0 +1,7 @@
+[plugin]
+name = "show_run"
+version = "1.0.0"
+author = "netops"
+description = "解析 show run 输出，提取接口配置/VLAN/ACL/端口安全"
+type = "parser"
+entry_point = "parsers.show_run:ShowRun"

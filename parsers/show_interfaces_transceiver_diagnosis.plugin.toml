@@ -1,0 +1,7 @@
+[plugin]
+name = "show_interfaces_transceiver_diagnosis"
+version = "1.0.0"
+author = "netops"
+description = "解析 show interfaces transceiver diagnosis 输出，提取DDM温度/电压/偏置/光功率"
+type = "parser"
+entry_point = "parsers.show_interfaces_transceiver_diagnosis:ShowInterfacesTransceiverDiagnosis"

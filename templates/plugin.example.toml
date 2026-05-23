@@ -1,0 +1,16 @@
+[plugin]
+name = "optical_power_alert"
+version = "1.0.0"
+author = "netops team"
+description = "光模块接收功率异常检测"
+type = "alert"
+entry_point = "plugins.alerts.optical_power:OpticalPowerAlert"
+
+[plugin.dependencies]
+# 依赖的插件列表（可选）
+# alert 插件通常无依赖
+
+[plugin.config]
+# JSON Schema 格式的配置声明
+rx_power_warn_threshold = {type = "number", default = -15.0, description = "RX power warning threshold (dBm)"}
+rx_power_crit_threshold = {type = "number", default = -20.0, description = "RX power critical threshold (dBm)"}

@@ -1,0 +1,7 @@
+[plugin]
+name = "show_fan_speed"
+version = "1.0.0"
+author = "netops"
+description = "解析 show fan speed 输出，提取风扇状态/转速/级别"
+type = "parser"
+entry_point = "parsers.show_fan:ShowFanSpeed"

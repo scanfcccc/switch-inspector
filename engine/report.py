@@ -1,15 +1,56 @@
-from typing import List, Dict, Any
+import os
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+
+from engine.alert_rule_base import AlertSeverity
+
+
+# ── 告警引擎单例 ──────────────────────────────────────────────────────
+
+_alert_engine: Optional["AlertPluginManager"] = None
+
+
+def _get_alert_engine():
+    global _alert_engine
+    if _alert_engine is None:
+        from engine.alert_engine import AlertPluginManager
+        _alert_engine = AlertPluginManager(rules_dir="rules")
+        _alert_engine.discover_rules()
+        default_cfg = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "rules", "rules.example.yaml",
+        )
+        if os.path.exists(default_cfg):
+            _alert_engine.load_config(default_cfg)
+        for name in list(_alert_engine._rules.keys()):
+            rule = _alert_engine._rules[name]
+            cfg = _alert_engine._config.get(name, {})
+            _alert_engine.configure_rule(rule, cfg)
+    return _alert_engine
+
+
+# ── 规则名 → 分类映射 ─────────────────────────────────────────────────
+
+_RULE_CATEGORY_MAP = {
+    "optics_power": "optical",
+    "interface_errors": "error",
+    "storm_control": "compliance",
+    "system_health": "system",
+}
+
+
+# ── 数据类型定义 ──────────────────────────────────────────────────────
 
 
 @dataclass
 class AlertItem:
     device_ip: str
     device_name: str
-    category: str  # optical / error / compliance / system
+    category: str  # optical / error / compliance / system / plugin
     severity: str  # critical / warning / info
     message: str
     detail: str = ""
+    rule_name: str = ""  # 来源规则名（插件告警专用）
 
 
 @dataclass
@@ -119,7 +160,7 @@ def build_report(ifaces: List[Dict],
 
     report.total_devices = len(report.devices)
 
-    # Generate alerts
+    # Generate hardcoded alerts (legacy)
     for ds in report.devices:
         if ds.optical_alert_count > 0:
             report.alerts.append(AlertItem(
@@ -145,6 +186,44 @@ def build_report(ifaces: List[Dict],
                 category='system', severity='info',
                 message=f"{ds.down_count}/{ds.interface_count} 接口down ({(ds.down_count*100)//ds.interface_count}%)",
             ))
+
+    # Plugin-based alerts
+    try:
+        engine = _get_alert_engine()
+        for ip, iface_list in dev_ifaces.items():
+            dev_info = device_map.get(ip, {})
+            device_data = {
+                "device_ip": ip,
+                "device_name": dev_info.get("_device_name", ""),
+                "interfaces": iface_list,
+                "device_info": dev_info,
+                "logs": parsed_data if parsed_data else [],
+            }
+            result = engine.evaluate_all(device_data)
+            for ar in result.get("alerts", []):
+                cat = _RULE_CATEGORY_MAP.get(ar.rule_name, "plugin")
+                sev = ar.severity.name.lower()
+                detail_parts = []
+                if ar.interface:
+                    detail_parts.append(f"接口: {ar.interface}")
+                if ar.details:
+                    detail_parts.append(str(ar.details))
+                report.alerts.append(AlertItem(
+                    device_ip=ar.device_ip or ip,
+                    device_name=dev_info.get("_device_name", ""),
+                    category=cat,
+                    severity=sev,
+                    message=ar.message,
+                    detail="; ".join(detail_parts),
+                    rule_name=ar.rule_name,
+                ))
+    except Exception as e:
+        report.alerts.append(AlertItem(
+            device_ip="", device_name="",
+            category="plugin", severity="info",
+            message=f"告警规则引擎异常: {e}",
+            rule_name="_engine_error",
+        ))
 
     # Optical health summary
     for iface in ifaces:

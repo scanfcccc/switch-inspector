@@ -2,11 +2,14 @@ import importlib
 import inspect
 import pkgutil
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import yaml
 
 from engine.parser_base import BaseParser, FieldDef, ParseResult
+from engine.plugin_base import PluginBase, PluginManifest
+from engine.plugin_manager import PluginManager
+from engine.plugin_exceptions import PluginValidationError
 from engine.normalizer import normalize_iface
 
 
@@ -28,12 +31,37 @@ def _load_mapping(path: str = None) -> Tuple[Dict, Dict]:
     return templates, field_labels
 
 
+def _structured_error(
+    plugin: str,
+    severity: str,
+    message: str,
+    suggestion: str = "",
+) -> Dict[str, str]:
+    """Create a structured load error entry.
+
+    Args:
+        plugin: Plugin/module name (e.g. ``parsers/foo.py``).
+        severity: One of ``"critical"``, ``"warning"``, ``"info"``.
+        message: Human-readable error description.
+        suggestion: Optional remediation hint.
+
+    Returns:
+        A dict with keys ``plugin``, ``severity``, ``message``, ``suggestion``.
+    """
+    return {
+        "plugin": plugin,
+        "severity": severity,
+        "message": message,
+        "suggestion": suggestion,
+    }
+
+
 class ParserRegistry:
     def __init__(self):
         self._textfsm_enabled = False
         self._textfsm_parsers: Dict[str, "TextFSMWrapper"] = {}
         self._custom_parsers: Dict[str, BaseParser] = {}
-        self._load_errors: List[str] = []
+        self._load_errors: List[Dict[str, str]] = []
 
     def register_textfsm(self, wrapper: "TextFSMWrapper"):
         self._textfsm_parsers[wrapper.command] = wrapper
@@ -64,6 +92,11 @@ class ParserRegistry:
         return p.fields if p else []
 
     def get_load_errors(self) -> List[str]:
+        """Return load errors as plain strings (backward-compatible)."""
+        return [e["message"] for e in self._load_errors]
+
+    def get_structured_load_errors(self) -> List[Dict[str, str]]:
+        """Return load errors as structured dicts with severity/suggestion."""
         return list(self._load_errors)
 
     def parse(self, command: str, raw: str) -> Optional[ParseResult]:
@@ -104,16 +137,29 @@ class ParserRegistry:
                         self.register_custom(instance)
                         found = True
                 if not found:
-                    self._load_errors.append(f"parsers/{modname}.py: no BaseParser subclass found")
+                    self._load_errors.append(_structured_error(
+                        f"parsers/{modname}.py", "warning",
+                        "no BaseParser subclass found",
+                        "Add a class that inherits from BaseParser with a valid 'command' attribute",
+                    ))
             except SyntaxError as e:
-                msg = f"parsers/{modname}.py: 语法错误: {e}"
-                self._load_errors.append(msg)
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "critical",
+                    f"语法错误: {e}",
+                    "Fix the Python syntax error in this file",
+                ))
             except ImportError as e:
-                msg = f"parsers/{modname}.py: 导入失败: {e}"
-                self._load_errors.append(msg)
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "critical",
+                    f"导入失败: {e}",
+                    "Check that all dependencies are installed and the module path is correct",
+                ))
             except Exception as e:
-                msg = f"parsers/{modname}.py: {e}"
-                self._load_errors.append(msg)
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "warning",
+                    str(e),
+                    "Review the parser code for runtime errors",
+                ))
 
     def load_textfsm_parsers(self, mapping_path: str = None):
         try:
@@ -126,7 +172,11 @@ class ParserRegistry:
         try:
             template_map, field_labels = _load_mapping(mapping_path)
         except Exception as e:
-            self._load_errors.append(f"加载 textfsm_mapping.yaml 失败: {e}")
+            self._load_errors.append(_structured_error(
+                "textfsm_mapping.yaml", "critical",
+                f"加载 textfsm_mapping.yaml 失败: {e}",
+                "Ensure templates/textfsm_mapping.yaml exists and is valid YAML",
+            ))
             return
 
         for cmd, (tmpl, category, join_group, join_key) in template_map.items():
@@ -218,3 +268,116 @@ class TextFSMWrapper(BaseParser):
             row['_origin'] = 'textfsm'
 
         return ParseResult(rows=rows)
+
+
+# ── Plugin integration ──────────────────────────────────────────────────
+
+
+def _wrap_plugin(plugin: PluginBase) -> BaseParser:
+    """Wrap a PluginBase instance into a BaseParser-compatible adapter.
+
+    The adapter delegates ``command``, ``fields``, and ``parse()`` to the
+    underlying plugin so it can be registered in ``_custom_parsers``.
+    """
+    class PluginParserAdapter(BaseParser):
+        def __init__(self, _p):
+            self._p = _p
+            self.command = getattr(_p, 'command', '')
+            self.fields = getattr(_p, 'fields', [])
+
+        def parse(self, raw: str) -> ParseResult:
+            return self._p.parse(raw)
+
+    return PluginParserAdapter(plugin)
+
+
+def _auto_manifest(cls: type) -> PluginManifest:
+    """Generate a default PluginManifest for old-style (non-PluginBase) parsers."""
+    return PluginManifest(
+        name=cls.__name__,
+        version="0.0.0",
+        author="auto",
+        description=f"Auto-generated manifest for {cls.__name__}",
+        plugin_type="parser",
+    )
+
+
+class PluginAwareParserRegistry(ParserRegistry):
+    """ParserRegistry that discovers PluginBase parsers via PluginManager.
+
+    * New-style parsers (``PluginBase`` subclasses) are discovered,
+      validated, and wrapped via ``_wrap_plugin``.
+    * Old-style parsers (``BaseParser`` subclasses without ``PluginBase``)
+      are loaded as before, with an auto-generated ``PluginManifest``.
+    * Parsers whose ``validate()`` fails are skipped and reported in
+      ``_load_errors`` / ``get_load_errors()``.
+    """
+
+    def load_custom_parsers(self):
+        from parsers import __path__ as parsers_paths
+        pm = PluginManager()
+
+        for importer, modname, ispkg in pkgutil.iter_modules(parsers_paths):
+            if modname.startswith('_'):
+                continue
+            try:
+                module = importlib.import_module(f"parsers.{modname}")
+                plugin_found = False
+
+                for name, obj in inspect.getmembers(module):
+                    if (inspect.isclass(obj) and issubclass(obj, PluginBase)
+                            and obj is not PluginBase):
+                        try:
+                            instance = obj()
+                            pm.register(instance)
+                            wrapped = _wrap_plugin(instance)
+                            self.register_custom(wrapped)
+                            plugin_found = True
+                        except PluginValidationError as e:
+                            self._load_errors.append(_structured_error(
+                                f"parsers/{modname}.py", "warning",
+                                f"插件校验失败: {e}",
+                                "Check the plugin's validate() method and ensure all required fields are present",
+                            ))
+                        except Exception as e:
+                            self._load_errors.append(_structured_error(
+                                f"parsers/{modname}.py", "critical",
+                                f"插件加载失败: {e}",
+                                "Review the plugin constructor and dependencies",
+                            ))
+
+                if not plugin_found:
+                    found = False
+                    for name, obj in inspect.getmembers(module):
+                        if (inspect.isclass(obj) and issubclass(obj, BaseParser)
+                                and obj is not BaseParser
+                                and hasattr(obj, 'command') and obj.command):
+                            instance = obj()
+                            instance._auto_manifest = _auto_manifest(type(instance))
+                            self.register_custom(instance)
+                            found = True
+                    if not found:
+                        self._load_errors.append(_structured_error(
+                            f"parsers/{modname}.py", "warning",
+                            "no BaseParser subclass found",
+                            "Add a class that inherits from BaseParser with a valid 'command' attribute",
+                        ))
+
+            except SyntaxError as e:
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "critical",
+                    f"语法错误: {e}",
+                    "Fix the Python syntax error in this file",
+                ))
+            except ImportError as e:
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "critical",
+                    f"导入失败: {e}",
+                    "Check that all dependencies are installed and the module path is correct",
+                ))
+            except Exception as e:
+                self._load_errors.append(_structured_error(
+                    f"parsers/{modname}.py", "warning",
+                    str(e),
+                    "Review the parser code for runtime errors",
+                ))

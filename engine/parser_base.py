@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Callable
+from typing import List, Dict, Optional, Any, Callable, ClassVar
 
 
 @dataclass
@@ -24,10 +24,22 @@ class ParseResult:
 class BaseParser(ABC):
     command: str = ""
     fields: List[FieldDef] = []
+    version: ClassVar[str] = "1.0.0"
 
     @abstractmethod
     def parse(self, raw: str) -> ParseResult:
         ...
+
+    def validate(self) -> List[str]:
+        return []
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        try:
+            from engine.plugin_manager import _INSTANCE
+        except ImportError:
+            pass
 
 
 class FixedWidthTableParser(BaseParser):

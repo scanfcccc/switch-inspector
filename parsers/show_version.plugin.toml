@@ -1,0 +1,7 @@
+[plugin]
+name = "show_version"
+version = "1.0.0"
+author = "netops"
+description = "解析 show version 输出，提取设备型号/软件版本/序列号"
+type = "parser"
+entry_point = "parsers.show_version:ShowVersion"

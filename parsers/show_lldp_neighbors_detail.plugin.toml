@@ -1,0 +1,7 @@
+[plugin]
+name = "show_lldp_neighbors_detail"
+version = "1.0.0"
+author = "netops"
+description = "解析 show lldp neighbors detail 输出，提取邻居设备名/IP/端口/型号"
+type = "parser"
+entry_point = "parsers.show_lldp_neighbors_detail:ShowLldpNeighborsDetail"

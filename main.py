@@ -57,7 +57,10 @@ def set_state(parsed_data, logs, scan_path):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     initialize()
+    from engine.hot_reload import auto_start, auto_stop
+    watcher = auto_start()
     yield
+    auto_stop()
 
 
 app = FastAPI(title="switch-inspector", lifespan=lifespan)
@@ -111,10 +114,19 @@ async def api_scan(body: dict):
     for lf in logs:
         all_cmds.update(lf.commands.keys())
 
-    plugin_errors = registry.get_load_errors()
+    structured_errors = registry.get_structured_load_errors()
+    failed_critical = sum(1 for e in structured_errors if e["severity"] == "critical")
+    failed_warning = sum(1 for e in structured_errors if e["severity"] == "warning")
+    plugin_status = {
+        "loaded": len(registry._custom_parsers) + len(registry._textfsm_parsers),
+        "failed_critical": failed_critical,
+        "failed_warning": failed_warning,
+        "errors": structured_errors,
+    }
+
     all_warnings = errors[:10]
-    if plugin_errors:
-        all_warnings.extend([f"[解析器] {e}" for e in plugin_errors[:5]])
+    if structured_errors:
+        all_warnings.extend([f"[解析器] {e['message']}" for e in structured_errors[:5]])
 
     return {
         "file_count": len(log_files),
@@ -123,6 +135,7 @@ async def api_scan(body: dict):
         "field_count": len(catalog.fields),
         "field_groups": field_groups,
         "warnings": all_warnings,
+        "plugin_status": plugin_status,
     }
 
 
@@ -254,7 +267,11 @@ async def api_report():
     }
 
 
-if __name__ == "__main__":
+def run():
     port = int(os.environ.get("PORT", 9876))
     print(f"  switch-inspector starting at http://127.0.0.1:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    uvicorn.run("main:app", host="127.0.0.1", port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    run()

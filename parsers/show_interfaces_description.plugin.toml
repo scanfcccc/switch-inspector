@@ -1,0 +1,7 @@
+[plugin]
+name = "show_interfaces_description"
+version = "1.0.0"
+author = "netops"
+description = "解析 show interfaces description / show interfaces status 输出，提取接口状态/描述/速率"
+type = "parser"
+entry_point = "parsers.show_interfaces_description:ShowInterfacesDescription"

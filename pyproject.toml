@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "switch-inspector"
+version = "0.3.0"
+description = "锐捷交换机巡检日志解析与告警系统"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.18",
+    "aiofiles>=24.1.0",
+    "openpyxl>=3.1.0",
+    "pyyaml>=6.0",
+    "watchdog>=6.0.0",
+]
+
+[project.scripts]
+switch-inspector = "main:run"
+
+[tool.setuptools.packages.find]
+include = ["engine*", "parsers*", "rules*", "ui*"]
+
+[tool.setuptools.package-data]
+"ui" = ["templates/*"]
+
+[project.entry-points."switch_inspector.parsers"]
+show_clock = "parsers.builtin_single:ShowClock"
+show_version = "parsers.show_version:ShowVersion"
+show_fan_speed = "parsers.show_fan:ShowFanSpeed"
+show_interfaces_transceiver = "parsers.show_interfaces_transceiver:ShowInterfacesTransceiverManuinfo"
+show_interfaces_transceiver_diagnosis = "parsers.show_interfaces_transceiver_diagnosis:ShowInterfacesTransceiverDiagnosis"
+show_lldp_neighbors_detail = "parsers.show_lldp_neighbors_detail:ShowLldpNeighborsDetail"
+show_interfaces_usage = "parsers.show_interfaces_usage:ShowInterfacesUsage"
+show_interfaces_counters = "parsers.show_interfaces_counters:ShowInterfacesCountersErrors"
+show_interfaces_description = "parsers.show_interfaces_description:ShowInterfacesDescription"
+show_logging = "parsers.show_logging:ShowLogging"
+show_run = "parsers.show_run:ShowRun"
+
+[project.entry-points."switch_inspector.rules"]
+optics_power = "rules.optics_power:OpticsPowerRule"
+interface_errors = "rules.interface_errors:InterfaceErrorsRule"
+storm_control = "rules.storm_control:StormControlRule"
+system_health = "rules.system_health:SystemHealthRule"

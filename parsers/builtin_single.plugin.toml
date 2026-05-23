@@ -1,0 +1,7 @@
+[plugin]
+name = "show_clock"
+version = "1.0.0"
+author = "netops"
+description = "解析 show clock / show exception / show coredump files / show erps / show switch virtual link / show password policy / show ip dhcp snooping 输出"
+type = "parser"
+entry_point = "parsers.builtin_single:ShowClock"

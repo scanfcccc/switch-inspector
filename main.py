@@ -2,6 +2,8 @@
 import os
 import sys
 import json
+import logging
+import dataclasses
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -21,6 +23,9 @@ from engine.field_catalog import (
 )
 from engine.exporter import export_csv, export_xlsx
 from engine.report import build_report
+from engine.topology import build_topology, default_config
+
+logger = logging.getLogger(__name__)
 
 
 # --- Scan state (thread-safe, single-user local tool) ---
@@ -267,6 +272,26 @@ async def api_report():
                       }
                      for d in report.devices],
     }
+
+
+@app.get("/api/topology")
+async def api_topology(show_terminals: bool = False):
+    parsed_data, _, _ = get_state()
+    if not parsed_data:
+        return {"error": "请先扫描目录"}
+    try:
+        result = build_topology(parsed_data, show_terminals=show_terminals)
+        return dataclasses.asdict(result)
+    except Exception as e:
+        logger.exception("拓扑生成失败")
+        return {"error": f"拓扑生成失败: {str(e)}"}
+
+
+@app.get("/topology", response_class=HTMLResponse)
+async def topology_page():
+    async with aiofiles.open("ui/templates/topology.html", encoding="utf-8") as f:
+        html = await f.read()
+    return html
 
 
 def run():

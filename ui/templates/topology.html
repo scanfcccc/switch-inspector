@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>switch-inspector | 网络拓扑</title>
+  <script src="https://d3js.org/d3.v7.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      overflow: hidden;
+      height: 100vh;
+    }
+    .header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .header-left a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 14px;
+      opacity: .85;
+      transition: opacity .2s;
+    }
+    .header-left a:hover { opacity: 1; }
+    .header-title { font-size: 16px; font-weight: 600; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .header-right label {
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+    .header-right input[type="checkbox"] {
+      width: 16px; height: 16px; cursor: pointer;
+    }
+    #topology-svg {
+      display: block;
+      width: 100%;
+      height: calc(100vh - 56px);
+      background: #f0f2f5;
+      cursor: grab;
+    }
+    #topology-svg:active { cursor: grabbing; }
+
+    /* Loading */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #f0f2f5;
+      z-index: 20;
+      transition: opacity .3s;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { margin-top: 16px; color: #666; font-size: 14px; }
+
+    /* Empty / Error */
+    .state-card {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+      padding: 32px 40px;
+      text-align: center;
+      z-index: 15;
+      max-width: 420px;
+    }
+    .state-card.hidden { display: none; }
+    .state-card .icon { font-size: 48px; margin-bottom: 12px; }
+    .state-card h3 { font-size: 16px; color: #333; margin-bottom: 8px; font-weight: 600; }
+    .state-card p { font-size: 13px; color: #888; line-height: 1.5; }
+    .state-card a {
+      color: #1a73e8;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .state-card a:hover { text-decoration: underline; }
+
+    /* Tooltip */
+    .tooltip {
+      position: fixed;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      padding: 14px 18px;
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .15s;
+      z-index: 100;
+      min-width: 180px;
+      border: 1px solid #e8e8e8;
+    }
+    .tooltip.visible { opacity: 1; }
+    .tooltip .tt-name { font-weight: 600; font-size: 14px; color: #222; margin-bottom: 4px; }
+    .tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; color: #555; }
+    .tooltip .tt-label { color: #999; }
+    .tooltip .tt-badge {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* Legend */
+    .legend-card {
+      position: fixed;
+      top: 76px; right: 16px;
+      background: rgba(255,255,255,.92);
+      border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 14px 16px;
+      font-size: 12px;
+      z-index: 10;
+      min-width: 140px;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(0,0,0,.06);
+    }
+    .legend-card h4 { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .legend-section { margin-bottom: 10px; }
+    .legend-section:last-child { margin-bottom: 0; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .legend-item:last-child { margin-bottom: 0; }
+    .legend-color {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .legend-shape {
+      width: 14px; height: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    }
+    .legend-shape svg { display: block; }
+    .legend-line {
+      width: 18px; height: 3px; border-radius: 1px; flex-shrink: 0;
+    }
+    .legend-label { color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <a href="/">&larr; 返回</a>
+      <span class="header-title">switch-inspector 网络拓扑</span>
+    </div>
+    <div class="header-right">
+      <label>
+        <input type="checkbox" id="terminal-toggle">
+        显示终端设备
+      </label>
+    </div>
+  </div>
+
+  <svg id="topology-svg"></svg>
+
+  <!-- Loading -->
+  <div id="loading" class="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">加载拓扑数据...</div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="empty-state" class="state-card hidden">
+    <div class="icon">&#128194;</div>
+    <h3>暂无拓扑数据</h3>
+    <p>请先在<a href="/">首页</a>扫描日志目录</p>
+  </div>
+
+  <!-- Error state -->
+  <div id="error-state" class="state-card hidden">
+    <div class="icon">&#9888;</div>
+    <h3>加载失败</h3>
+    <p id="error-message">无法获取拓扑数据，请稍后重试</p>
+  </div>
+
+  <!-- Tooltip -->
+  <div id="tooltip" class="tooltip"></div>
+
+  <!-- Legend -->
+  <div id="legend" class="legend-card"></div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // ── Constants ──
+      const TIER_COLORS = { core: '#e74c3c', agg: '#f39c12', access: '#3498db', terminal: '#95a5a6' };
+      const TIER_Y = { core: 100, agg: 300, access: 500, terminal: 650 };
+      const EDGE_COLORS = { uplink: '#3498db', access: '#2ecc71', peer: '#bdc3c7' };
+      const DEFAULT_EDGE_COLOR = '#bdc3c7';
+
+      // ── State ──
+      let simulation = null;
+      let nodeData = [];
+      let edgeData = [];
+      let summaryData = null;
+
+      // ── DOM refs ──
+      const svg = d3.select('#topology-svg');
+      const tooltip = document.getElementById('tooltip');
+      const loadingEl = document.getElementById('loading');
+      const emptyEl = document.getElementById('empty-state');
+      const errorEl = document.getElementById('error-state');
+      const errorMsg = document.getElementById('error-message');
+      const legendEl = document.getElementById('legend');
+      const terminalToggle = document.getElementById('terminal-toggle');
+
+      // ── SVG setup ──
+      const width = () => window.innerWidth;
+      const height = () => window.innerHeight - 56;
+
+      const svgEl = document.getElementById('topology-svg');
+      svgEl.setAttribute('width', width());
+      svgEl.setAttribute('height', height());
+
+      const g = svg.append('g');
+      const gEdges = g.append('g').attr('class', 'edges');
+      const gNodes = g.append('g').attr('class', 'nodes');
+      const gLabels = g.append('g').attr('class', 'labels');
+
+      // ── Zoom ──
+      const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on('zoom', (event) => {
+          g.attr('transform', event.transform);
+        });
+      svg.call(zoom);
+
+      // ── Resize ──
+      window.addEventListener('resize', () => {
+        svgEl.setAttribute('width', width());
+        svgEl.setAttribute('height', height());
+      });
+
+      // ── Drag ──
+      function makeDrag() {
+        let sim = null;
+        function dragstarted(event, d) {
+          if (!event.active) sim.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        }
+        function dragged(event, d) {
+          d.fx = event.x;
+          d.fy = event.y;
+        }
+        function dragended(event, d) {
+          if (!event.active) sim.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        }
+        const d3drag = d3.drag()
+          .on('start', dragstarted)
+          .on('drag', dragged)
+          .on('end', dragended);
+        return { d3drag, setSim: (s) => { sim = s; } };
+      }
+      const dragInstance = makeDrag();
+
+      // ── Build legend ──
+      function buildLegend() {
+        let html = '<h4>图例</h4>';
+
+        // Tier colors
+        html += '<div class="legend-section">';
+        html += '<div class="legend-item"><span class="legend-color" style="background:#e74c3c"></span><span class="legend-label">核心层</span></div>';
+        html += '<div class="legend-item"><span class="legend-color" style="background:#f39c12"></span><span class="legend-label">汇聚层</span></div>';
+        html += '<div class="legend-item"><span class="legend-color" style="background:#3498db"></span><span class="legend-label">接入层</span></div>';
+        html += '<div class="legend-item"><span class="legend-color" style="background:#95a5a6"></span><span class="legend-label">终端</span></div>';
+        html += '</div>';
+
+        // Shapes
+        html += '<div class="legend-section">';
+        html += '<div class="legend-item"><span class="legend-shape"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#555"/></svg></span><span class="legend-label">管理设备</span></div>';
+        html += '<div class="legend-item"><span class="legend-shape"><svg width="14" height="14"><polygon points="7,1 13,7 7,13 1,7" fill="#555"/></svg></span><span class="legend-label">外部设备</span></div>';
+        html += '</div>';
+
+        // Edge types
+        html += '<div class="legend-section">';
+        html += '<div class="legend-item"><span class="legend-line" style="background:#3498db"></span><span class="legend-label">上行链路</span></div>';
+        html += '<div class="legend-item"><span class="legend-line" style="background:#2ecc71"></span><span class="legend-label">接入链路</span></div>';
+        html += '<div class="legend-item"><span class="legend-line" style="background:#bdc3c7"></span><span class="legend-label">对等链路</span></div>';
+        html += '</div>';
+
+        legendEl.innerHTML = html;
+      }
+      buildLegend();
+
+      // ── Tooltip ──
+      function showTooltip(d, event) {
+        const tierLabel = { core: '核心层', agg: '汇聚层', access: '接入层', terminal: '终端' };
+        const typeLabel = d.device_type === 'external' ? '外部设备' : '管理设备';
+        const color = TIER_COLORS[d.tier] || '#999';
+        const connected = edgeData.filter(e => e.source.id === d.id || e.target.id === d.id).length;
+
+        // Build tooltip with DOM elements (safe: no innerHTML with user data)
+        tooltip.textContent = '';
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'tt-name';
+        nameDiv.textContent = d.name;
+        tooltip.appendChild(nameDiv);
+
+        function addRow(label, value) {
+          const row = document.createElement('div');
+          row.className = 'tt-row';
+          const lbl = document.createElement('span');
+          lbl.className = 'tt-label';
+          lbl.textContent = label;
+          const val = document.createElement('span');
+          val.textContent = value;
+          row.appendChild(lbl);
+          row.appendChild(val);
+          tooltip.appendChild(row);
+        }
+
+        addRow('型号', d.model || '-');
+        addRow('层级', tierLabel[d.tier] || d.tier);
+        addRow('分组', d.group || '-');
+        addRow('类型', typeLabel);
+        addRow('连接数', String(connected));
+
+        // Color the tier badge
+        const rows = tooltip.querySelectorAll('.tt-row');
+        for (let i = 0; i < rows.length; i++) {
+          const spans = rows[i].querySelectorAll('span');
+          if (spans.length >= 2 && spans[0].textContent === '层级') {
+            const badge = document.createElement('span');
+            badge.className = 'tt-badge';
+            badge.style.background = color;
+            badge.textContent = spans[1].textContent;
+            spans[1].textContent = '';
+            spans[1].appendChild(badge);
+            break;
+          }
+        }
+
+        tooltip.classList.add('visible');
+
+        const rect = tooltip.getBoundingClientRect();
+        let tx = event.clientX + 14;
+        let ty = event.clientY - 10;
+        if (tx + rect.width > window.innerWidth) tx = event.clientX - rect.width - 14;
+        if (ty + rect.height > window.innerHeight) ty = event.clientY - rect.height - 10;
+        if (ty < 56) ty = 66;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = ty + 'px';
+      }
+
+      function hideTooltip() {
+        tooltip.classList.remove('visible');
+      }
+
+      // ── Node shape renderer ──
+      function nodeShape(d) {
+        if (d.device_type === 'external') {
+          const s = 12;
+          return d3.symbol().type(d3.symbolDiamond).size(s * s)();
+        }
+        return d3.symbol().type(d3.symbolCircle).size(14 * 14 * Math.PI)();
+      }
+
+      // ── Render graph ──
+      function renderGraph(nodes, edges) {
+        // Clear
+        gEdges.selectAll('*').remove();
+        gNodes.selectAll('*').remove();
+        gLabels.selectAll('*').remove();
+        if (simulation) simulation.stop();
+
+        // Edges
+        const link = gEdges.selectAll('line')
+          .data(edges)
+          .join('line')
+          .attr('stroke', d => EDGE_COLORS[d.type] || DEFAULT_EDGE_COLOR)
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', 0.6)
+          .attr('stroke-linecap', 'round');
+
+        // Nodes
+        const node = gNodes.selectAll('path')
+          .data(nodes)
+          .join('path')
+          .attr('d', nodeShape)
+          .attr('fill', d => TIER_COLORS[d.tier] || '#999')
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 1.5)
+          .style('cursor', 'pointer')
+          .call(dragInstance.d3drag)
+          .on('mouseenter', function(event, d) {
+            // Highlight connected
+            const connectedIds = new Set();
+            connectedIds.add(d.id);
+            edges.forEach(e => {
+              const sid = typeof e.source === 'object' ? e.source.id : e.source;
+              const tid = typeof e.target === 'object' ? e.target.id : e.target;
+              if (sid === d.id) connectedIds.add(tid);
+              if (tid === d.id) connectedIds.add(sid);
+            });
+            link.attr('stroke-opacity', e => {
+              const sid = typeof e.source === 'object' ? e.source.id : e.source;
+              const tid = typeof e.target === 'object' ? e.target.id : e.target;
+              return (sid === d.id || tid === d.id) ? 0.9 : 0.08;
+            });
+            node.attr('opacity', n => connectedIds.has(n.id) ? 1 : 0.08);
+            gLabels.selectAll('text').attr('opacity', n => connectedIds.has(n.id) ? 0.8 : 0.08);
+          })
+          .on('mouseleave', function() {
+            link.attr('stroke-opacity', 0.6);
+            node.attr('opacity', 1);
+            gLabels.selectAll('text').attr('opacity', 0.8);
+          })
+          .on('click', function(event, d) {
+            event.stopPropagation();
+            showTooltip(d, event);
+          });
+
+        // Click on background to hide tooltip
+        svg.on('click', function() {
+          hideTooltip();
+        });
+
+        // Labels
+        const label = gLabels.selectAll('text')
+          .data(nodes)
+          .join('text')
+          .text(d => d.name)
+          .attr('text-anchor', 'middle')
+          .attr('dy', d => d.device_type === 'external' ? '22' : '24')
+          .attr('font-size', '10px')
+          .attr('fill', '#555')
+          .attr('opacity', 0.8)
+          .style('pointer-events', 'none');
+
+        // Simulation
+        simulation = d3.forceSimulation(nodes)
+          .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
+          .force('charge', d3.forceManyBody().strength(-400))
+          .force('collide', d3.forceCollide(15))
+          .force('x', d3.forceX(width() / 2).strength(0.05))
+          .force('y', d3.forceY(d => TIER_Y[d.tier] || 400).strength(0.3))
+          .alphaDecay(0.02)
+          .on('tick', () => {
+            link
+              .attr('x1', d => d.source.x)
+              .attr('y1', d => d.source.y)
+              .attr('x2', d => d.target.x)
+              .attr('y2', d => d.target.y);
+            node
+              .attr('transform', d => `translate(${d.x},${d.y})`);
+            label
+              .attr('x', d => d.x)
+              .attr('y', d => d.y);
+          });
+        dragInstance.setSim(simulation);
+
+        // Center view after simulation settles
+        simulation.on('end', () => {
+          const bounds = g.node().getBBox();
+          if (bounds.width > 0 && bounds.height > 0) {
+            const scale = Math.min(width() / (bounds.width + 80), height() / (bounds.height + 80), 1.5);
+            const tx = (width() - bounds.width * scale) / 2 - bounds.x * scale;
+            const ty = (height() - bounds.height * scale) / 2 - bounds.y * scale;
+            svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+          }
+        });
+      }
+
+      // ── Fetch data ──
+      async function fetchTopology() {
+        loadingEl.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+        errorEl.classList.add('hidden');
+        hideTooltip();
+
+        try {
+          const showTerminals = terminalToggle.checked;
+          let url = '/api/topology';
+          if (showTerminals) url += '?show_terminals=true';
+
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+
+          const data = await res.json();
+          if (!data.nodes || data.nodes.length === 0) {
+            loadingEl.classList.add('hidden');
+            emptyEl.classList.remove('hidden');
+            return;
+          }
+
+          nodeData = data.nodes;
+          edgeData = data.edges || [];
+          summaryData = data.summary || null;
+
+          loadingEl.classList.add('hidden');
+          renderGraph(nodeData, edgeData);
+
+        } catch (err) {
+          loadingEl.classList.add('hidden');
+          errorMsg.textContent = err.message || '无法获取拓扑数据，请稍后重试';
+          errorEl.classList.remove('hidden');
+        }
+      }
+
+      // ── Terminal toggle ──
+      terminalToggle.addEventListener('change', fetchTopology);
+
+      // ── Init ──
+      fetchTopology();
+    })();
+  </script>
+</body>
+</html>

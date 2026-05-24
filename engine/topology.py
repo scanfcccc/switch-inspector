@@ -39,6 +39,10 @@ class TopologyConfig:
     internal_subnets: List[str] = field(default_factory=lambda: [
         "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
     ])
+    ip_tier_patterns: Dict[str, List[str]] = field(default_factory=lambda: {
+        "core": [r"\d+\.\d+\.0\.\d+", r"172\.17\.0\.\d+"],
+        "agg": [r"\d+\.\d+\.1\.\d+", r"172\.17\.1\.\d+"],
+    })
     default_tier: str = "access"
     default_device_type: str = "managed"
 
@@ -100,10 +104,11 @@ def _detect_tier(name: str, ip: str, config: TopologyConfig) -> str:
         if patterns and _glob_match(name, patterns):
             return tier
     if ip:
-        if re.search(r"\d+\.\d+\.0\.\d+", ip):
-            return "core"
-        if re.search(r"\d+\.\d+\.1\.\d+", ip):
-            return "agg"
+        for tier in ("core", "agg"):
+            patterns = config.ip_tier_patterns.get(tier, [])
+            for pat in patterns:
+                if re.search(pat, ip):
+                    return tier
     return config.default_tier
 
 
@@ -169,23 +174,36 @@ def _resolve_node_id(
     device_by_ip: Dict[str, dict],
     device_by_name: Dict[str, dict],
     device_by_norm: Dict[str, dict],
+    chassis_id: str = "",
+    device_by_chassis: Optional[Dict[str, dict]] = None,
 ) -> Optional[str]:
+    if device_by_chassis is None:
+        device_by_chassis = {}
+    # 1. IP match
     if ip and ip in nodes:
         return ip
     if ip and ip in device_by_ip:
         return ip
+    # 2. Chassis ID match (new)
+    if chassis_id and chassis_id in device_by_chassis:
+        dr = device_by_chassis[chassis_id]
+        return dr.get("_device_ip") or chassis_id
     if not name:
         return None
+    # 3. Name exact match (case-insensitive)
     nl = name.lower()
     nn = _strip_domain(name).lower()
     for nid, node in nodes.items():
         if node.name.lower() == nl:
             return nid
+    # 4. Name normalized (domain stripped)
     for nid, node in nodes.items():
         if _strip_domain(node.name).lower() == nn:
             return nid
+    # 5. device_by_name fallback
     if nl in device_by_name:
         return device_by_name[nl].get("_device_ip") or nl
+    # 6. device_by_norm fallback
     if nn in device_by_norm:
         return device_by_norm[nn].get("_device_ip") or nn
     return None
@@ -203,6 +221,7 @@ def _extract_nodes(
     device_by_ip: Dict[str, dict] = {}
     device_by_name: Dict[str, dict] = {}
     device_by_norm: Dict[str, dict] = {}
+    device_by_chassis: Dict[str, dict] = {}
     for dr in device_rows:
         ip = (dr.get("_device_ip") or "").strip()
         name = (dr.get("_device_name") or "").strip()
@@ -211,6 +230,18 @@ def _extract_nodes(
         if name:
             device_by_name[name.lower()] = dr
             device_by_norm[_strip_domain(name).lower()] = dr
+
+    # Also index chassis_ids from neighbor rows.
+    for nr in neighbor_rows:
+        chassis_id = (nr.get("neighbor_chassis_id") or "").strip()
+        if not chassis_id or chassis_id in device_by_chassis:
+            continue
+        n_ip = (nr.get("neighbor_ip") or "").strip()
+        n_name = (nr.get("neighbor_name") or "").strip()
+        if n_ip and n_ip in device_by_ip:
+            device_by_chassis[chassis_id] = device_by_ip[n_ip]
+        elif n_name and n_name.lower() in device_by_name:
+            device_by_chassis[chassis_id] = device_by_name[n_name.lower()]
 
     # Collect all scanned (local) devices: from device rows and neighbor
     # source IPs (a device may lack `show version` but still have LLDP data).
@@ -228,9 +259,13 @@ def _extract_nodes(
         src_ip = (nr.get("_device_ip") or "").strip()
         src_name = (nr.get("_device_name") or "").strip()
         already_known = (
-            (src_ip and src_ip in device_by_ip)
-            or (src_name and src_name.lower() in device_by_name)
-            or (src_name and _strip_domain(src_name).lower() in device_by_norm)
+            (src_ip and (src_ip in device_by_ip or src_ip in local_by_id or src_ip in nodes))
+            or (src_name and (src_name.lower() in device_by_name
+                             or any(n.name.lower() == src_name.lower() for n in nodes.values())
+                             or any(info["name"].lower() == src_name.lower() for info in local_by_id.values())))
+            or (src_name and (_strip_domain(src_name).lower() in device_by_norm
+                             or any(_strip_domain(n.name).lower() == _strip_domain(src_name).lower() for n in nodes.values())
+                             or any(_strip_domain(info["name"]).lower() == _strip_domain(src_name).lower() for info in local_by_id.values())))
         )
         if already_known:
             continue
@@ -255,8 +290,10 @@ def _extract_nodes(
         n_model = (nr.get("neighbor_model") or "")
         if not n_ip and not n_name:
             continue
+        n_chassis = (nr.get("neighbor_chassis_id") or "").strip()
         if _resolve_node_id(n_ip, n_name, nodes, device_by_ip,
-                             device_by_name, device_by_norm):
+                             device_by_name, device_by_norm,
+                             n_chassis, device_by_chassis):
             continue
         nid = n_ip if n_ip else _strip_domain(n_name)
         if not nid or nid in nodes:
@@ -283,6 +320,7 @@ def _build_edges(
     device_by_ip: Dict[str, dict] = {}
     device_by_name: Dict[str, dict] = {}
     device_by_norm: Dict[str, dict] = {}
+    device_by_chassis: Dict[str, dict] = {}
     for dr in device_rows:
         ip = (dr.get("_device_ip") or "").strip()
         name = (dr.get("_device_name") or "").strip()
@@ -291,6 +329,18 @@ def _build_edges(
         if name:
             device_by_name[name.lower()] = dr
             device_by_norm[_strip_domain(name).lower()] = dr
+
+    # Also index chassis_ids from neighbor rows.
+    for nr in neighbor_rows:
+        chassis_id = (nr.get("neighbor_chassis_id") or "").strip()
+        if not chassis_id or chassis_id in device_by_chassis:
+            continue
+        n_ip = (nr.get("neighbor_ip") or "").strip()
+        n_name = (nr.get("neighbor_name") or "").strip()
+        if n_ip and n_ip in device_by_ip:
+            device_by_chassis[chassis_id] = device_by_ip[n_ip]
+        elif n_name and n_name.lower() in device_by_name:
+            device_by_chassis[chassis_id] = device_by_name[n_name.lower()]
 
     edge_map: Dict[tuple, dict] = {}
 
@@ -303,10 +353,12 @@ def _build_edges(
         local_iface = (nr.get("local_iface") or nr.get("interface") or "").strip()
         tgt_model = (nr.get("neighbor_model") or "").strip()
 
+        tgt_chassis = (nr.get("neighbor_chassis_id") or "").strip()
         source_id = _resolve_node_id(src_ip, src_name, nodes,
                                      device_by_ip, device_by_name, device_by_norm)
         target_id = _resolve_node_id(tgt_ip, tgt_name, nodes,
-                                     device_by_ip, device_by_name, device_by_norm)
+                                     device_by_ip, device_by_name, device_by_norm,
+                                     tgt_chassis, device_by_chassis)
         if not source_id or not target_id:
             logger.warning("Skipping row: unresolvable source=(%s,%s) target=(%s,%s)",
                            src_ip, src_name, tgt_ip, tgt_name)

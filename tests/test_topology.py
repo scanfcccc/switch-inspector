@@ -9,6 +9,9 @@ from engine.topology import (
     default_config,
     _detect_tier,
     _map_building,
+    _resolve_node_id,
+    _extract_nodes,
+    _build_edges,
     _strip_domain,
     _get_edge_type,
 )
@@ -46,6 +49,268 @@ class TestInternalHelpers:
         assert _get_edge_type("agg", "access") == "uplink"
         assert _get_edge_type("core", "terminal") == "uplink"
         assert _get_edge_type("terminal", "core") == "access"
+
+
+# ── _resolve_node_id ───────────────────────────────────────────────────
+
+class TestResolveNodeId:
+
+    def _make_nodes(self):
+        nodes: dict = {}
+        nodes["10.0.0.1"] = TopologyNode(
+            id="10.0.0.1", name="CORE-SW-01", model="",
+            tier="core", group="", device_type="managed",
+        )
+        nodes["10.0.0.2"] = TopologyNode(
+            id="10.0.0.2", name="CORE-SW-02.domain.com", model="",
+            tier="core", group="", device_type="managed",
+        )
+        return nodes
+
+    def _make_indexes(self):
+        device_by_ip = {
+            "10.0.0.1": {"_device_ip": "10.0.0.1", "_device_name": "CORE-SW-01"},
+            "10.0.0.2": {"_device_ip": "10.0.0.2", "_device_name": "CORE-SW-02.domain.com"},
+            "10.0.0.3": {"_device_ip": "10.0.0.3", "_device_name": "DEVICE-FROM-INDEX"},
+        }
+        device_by_name = {
+            "core-sw-01": {"_device_ip": "10.0.0.1", "_device_name": "CORE-SW-01"},
+            "core-sw-02.domain.com": {"_device_ip": "10.0.0.2", "_device_name": "CORE-SW-02.domain.com"},
+            "device-from-index": {"_device_ip": "10.0.0.3", "_device_name": "DEVICE-FROM-INDEX"},
+        }
+        device_by_norm = {
+            "core-sw-01": {"_device_ip": "10.0.0.1", "_device_name": "CORE-SW-01"},
+            "core-sw-02": {"_device_ip": "10.0.0.2", "_device_name": "CORE-SW-02.domain.com"},
+            "device-from-index": {"_device_ip": "10.0.0.3", "_device_name": "DEVICE-FROM-INDEX"},
+        }
+        return device_by_ip, device_by_name, device_by_norm
+
+    # 1. IP match → returns IP
+    def test_ip_match(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("10.0.0.1", "", nodes, dip, dnm, dno)
+        assert result == "10.0.0.1"
+
+    # 2. Name exact match (case-insensitive) → returns node id
+    def test_name_exact_match_case_insensitive(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "CORE-SW-01", nodes, dip, dnm, dno)
+        assert result == "10.0.0.1"
+        # Lowercase name also matches
+        result2 = _resolve_node_id("", "core-sw-01", nodes, dip, dnm, dno)
+        assert result2 == "10.0.0.1"
+
+    # 3. Name normalized (domain stripped) → returns node id
+    def test_name_normalized_domain_stripped(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "CORE-SW-02", nodes, dip, dnm, dno)
+        assert result == "10.0.0.2"
+
+    # 4. device_by_name fallback → returns device_ip
+    def test_device_by_name_fallback(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "DEVICE-FROM-INDEX", nodes, dip, dnm, dno)
+        assert result == "10.0.0.3"
+
+    # 5. device_by_norm fallback → returns device_ip
+    def test_device_by_norm_fallback(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "device-from-index.domain.com",
+                                  nodes, dip, dnm, dno)
+        assert result == "10.0.0.3"
+
+    # 6. IP no match → None
+    def test_ip_no_match(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("9.9.9.9", "", nodes, dip, dnm, dno)
+        assert result is None
+
+    # 7. Name no match → None
+    def test_name_no_match(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "UNKNOWN", nodes, dip, dnm, dno)
+        assert result is None
+
+    # 8. Empty input → None
+    def test_empty_input(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("", "", nodes, dip, dnm, dno)
+        assert result is None
+
+    # 9. IP priority over name → returns IP's node
+    def test_ip_priority_over_name(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        result = _resolve_node_id("10.0.0.1", "different-name",
+                                  nodes, dip, dnm, dno)
+        assert result == "10.0.0.1"
+
+    # 10. chassis_id match → returns node id
+    def test_chassis_id_match(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        dch = {"aa:bb:cc:dd:ee:ff":
+               {"_device_ip": "10.0.0.3", "_device_name": "DEVICE-FROM-INDEX"}}
+        result = _resolve_node_id("", "", nodes, dip, dnm, dno,
+                                  "aa:bb:cc:dd:ee:ff", dch)
+        assert result == "10.0.0.3"
+
+    # 11. IP priority over chassis_id → returns IP's node
+    def test_ip_priority_over_chassis_id(self):
+        nodes = self._make_nodes()
+        dip, dnm, dno = self._make_indexes()
+        dch = {"aa:bb:cc:dd:ee:ff":
+               {"_device_ip": "9.9.9.9", "_device_name": "OTHER-DEVICE"}}
+        result = _resolve_node_id("10.0.0.1", "", nodes, dip, dnm, dno,
+                                  "aa:bb:cc:dd:ee:ff", dch)
+        assert result == "10.0.0.1"
+
+
+# ── _extract_nodes dedup ────────────────────────────────────────────────
+
+class TestExtractNodesDedup:
+
+    def test_same_src_ip_two_rows(self, topo_config):
+        """Two neighbor rows with same src_ip (no device list) → 1 managed node."""
+        data = {
+            "device": [],
+            "neighbor": [
+                {"_device_ip": "10.0.0.99", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-A", "neighbor_ip": "10.0.0.1"},
+                {"_device_ip": "10.0.0.99", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-B", "neighbor_ip": "10.0.0.2"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        ip_nodes = [n for n in nodes.values() if n.id == "10.0.0.99"]
+        assert len(ip_nodes) == 1
+
+    def test_same_src_name_two_rows(self, topo_config):
+        """Two neighbor rows with same src_name (no src_ip, no device list) → 1 managed node."""
+        data = {
+            "device": [],
+            "neighbor": [
+                {"_device_ip": "", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-A", "neighbor_ip": "10.0.0.1"},
+                {"_device_ip": "", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-B", "neighbor_ip": "10.0.0.2"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        name_nodes = [n for n in nodes.values() if n.name == "DEV-99"]
+        assert len(name_nodes) == 1
+
+    def test_src_ip_already_in_local_by_id(self, topo_config):
+        """src_ip matches existing local_by_id entry with different nid → skip."""
+        data = {
+            "device": [],
+            "neighbor": [
+                {"_device_ip": "10.0.0.99", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-A", "neighbor_ip": "10.0.0.1"},
+                {"_device_ip": "", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-B", "neighbor_ip": "10.0.0.2"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        dev_nodes = [n for n in nodes.values() if "DEV-99" in n.name or n.id == "10.0.0.99"]
+        assert len(dev_nodes) == 1
+        assert "10.0.0.99" in nodes
+
+    def test_src_name_already_in_local_by_id(self, topo_config):
+        """src_name matches existing local_by_id entry → skip."""
+        data = {
+            "device": [],
+            "neighbor": [
+                {"_device_ip": "", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-A", "neighbor_ip": "10.0.0.1"},
+                {"_device_ip": "10.0.0.99", "_device_name": "DEV-99",
+                 "neighbor_name": "OTHER-B", "neighbor_ip": "10.0.0.2"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        dev_nodes = [n for n in nodes.values() if "DEV-99" in n.name or "10.0.0.99" in n.id]
+        assert len(dev_nodes) == 1
+
+
+# ── _detect_tier extended ──────────────────────────────────────────────
+
+class TestDetectTierExtended:
+
+    def test_chinese_core(self, topo_config):
+        assert _detect_tier("核心交换机-01", "", topo_config) == "core"
+
+    def test_chinese_agg(self, topo_config):
+        assert _detect_tier("汇聚交换机-F2", "", topo_config) == "agg"
+
+    def test_chinese_access(self, topo_config):
+        assert _detect_tier("接入交换机-B1", "", topo_config) == "access"
+
+    def test_real_acc_name(self, topo_config):
+        assert _detect_tier(
+            "PJXRMYY-ACC-NW-MZ-3F-04-S5000-210-POE", "", topo_config
+        ) == "access"
+
+    def test_real_core_name(self, topo_config):
+        assert _detect_tier(
+            "PJXRMYY-NW-JF-2F-CORE", "", topo_config
+        ) == "core"
+
+    def test_real_agg_name(self, topo_config):
+        assert _detect_tier(
+            "PJXRMYY-NW-MZ-1#-1~3F-AGG-S6120-01-30", "", topo_config
+        ) == "agg"
+
+    def test_ip_172_core(self, topo_config):
+        assert _detect_tier("unknown", "172.17.0.1", topo_config) == "core"
+
+    def test_ip_172_agg(self, topo_config):
+        assert _detect_tier("unknown", "172.17.1.1", topo_config) == "agg"
+
+    def test_ip_172_fallback(self, topo_config):
+        assert _detect_tier("unknown", "172.17.252.1", topo_config) == "access"
+
+    def test_empty_name_empty_ip(self, topo_config):
+        assert _detect_tier("", "", topo_config) == "access"
+
+    def test_name_only_no_ip(self, topo_config):
+        assert _detect_tier("CORE-SW", "", topo_config) == "core"
+
+    def test_multi_pattern_match(self, topo_config):
+        """Name matching both *CORE* and *ACC* → core (higher priority than access)."""
+        assert _detect_tier("CORE-ACC-SW", "", topo_config) == "core"
+
+
+# ── _map_building extended ─────────────────────────────────────────────
+
+class TestMapBuildingExtended:
+
+    def test_real_mz(self, topo_config):
+        assert _map_building(
+            "PJXRMYY-ACC-NW-MZ-3F-04-S5000-210-POE", topo_config
+        ) == "门诊楼"
+
+    def test_real_zy(self, topo_config):
+        assert _map_building(
+            "PJXRMYY-ACC-NW-ZY-12F-01-S5000-100", topo_config
+        ) == "中医楼"
+
+    def test_real_xz(self, topo_config):
+        assert _map_building(
+            "PJXRMYY-ACC-NW-XZ-2F-S5000-50", topo_config
+        ) == "行政楼"
+
+    def test_real_jf(self, topo_config):
+        assert _map_building(
+            "PJXRMYY-NW-JF-2F-CORE", topo_config
+        ) == "未分类"
 
 
 # ── Build topology ────────────────────────────────────────────────────
@@ -210,3 +475,66 @@ class TestBuildTopology:
         assert edge_types[tuple(sorted([hx, a1]))] == "uplink"
         assert edge_types[tuple(sorted([hx, a2]))] == "uplink"
         assert edge_types[tuple(sorted([a1, a2]))] == "peer"
+
+
+# ── _build_edges direction ──────────────────────────────────────────────
+
+class TestBuildEdgesDirection:
+
+    def test_self_loop_filtered(self, topo_config):
+        """Neighbor row where source == target → 0 edges."""
+        data = {
+            "device": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1", "model": ""},
+            ],
+            "neighbor": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1",
+                 "neighbor_name": "SW-01", "neighbor_ip": "10.0.0.1",
+                 "interface": "Gi0/1", "neighbor_interface": "Gi0/1"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        edges = _build_edges(data, nodes)
+        assert len(edges) == 0
+
+    def test_multi_edge_same_target(self, topo_config):
+        """Two neighbor rows, same source+target, different ports → 1 edge, count=2."""
+        data = {
+            "device": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1", "model": ""},
+                {"_device_name": "SW-02", "_device_ip": "10.0.0.2", "model": ""},
+            ],
+            "neighbor": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1",
+                 "neighbor_name": "SW-02", "neighbor_ip": "10.0.0.2",
+                 "interface": "Gi0/1", "neighbor_interface": "Gi0/1"},
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1",
+                 "neighbor_name": "SW-02", "neighbor_ip": "10.0.0.2",
+                 "interface": "Gi0/2", "neighbor_interface": "Gi0/2"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        edges = _build_edges(data, nodes)
+        assert len(edges) == 1
+        assert edges[0].count == 2
+
+    def test_canonical_dedup(self, topo_config):
+        """A→B and B→A neighbor rows → 1 edge, count=2."""
+        data = {
+            "device": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1", "model": ""},
+                {"_device_name": "SW-02", "_device_ip": "10.0.0.2", "model": ""},
+            ],
+            "neighbor": [
+                {"_device_name": "SW-01", "_device_ip": "10.0.0.1",
+                 "neighbor_name": "SW-02", "neighbor_ip": "10.0.0.2",
+                 "interface": "Gi0/1", "neighbor_interface": "Gi0/1"},
+                {"_device_name": "SW-02", "_device_ip": "10.0.0.2",
+                 "neighbor_name": "SW-01", "neighbor_ip": "10.0.0.1",
+                 "interface": "Gi0/1", "neighbor_interface": "Gi0/1"},
+            ],
+        }
+        nodes = _extract_nodes(data, topo_config)
+        edges = _build_edges(data, nodes)
+        assert len(edges) == 1
+        assert edges[0].count == 2
